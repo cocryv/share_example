@@ -1,0 +1,75 @@
+---
+- name: Configuration de la base de données pour WordPress
+  hosts: vm-db
+  become: yes
+  vars:
+    mysql_root_password: "your_root_password"
+    wp_db_name: "wordpress"
+    wp_db_user: "wp_user"
+    wp_db_password: "your_wp_password"
+
+  tasks:
+    - name: Installer le module PyMySQL pour Ansible
+      apt:
+        name: python3-pymysql
+        state: present
+
+
+    - name: Installer MariaDB
+      apt:
+        name: mariadb-server
+        state: present
+
+    - name: Démarrer et activer MySQL
+      systemd:
+        name: mysql
+        state: started
+        enabled: yes
+
+    - name: Sécuriser MariaDB - Définir le mot de passe root
+      community.mysql.mysql_user:
+        name: root
+        password: "{{ mysql_root_password }}"
+        host: localhost
+        priv: '*.*:ALL,GRANT'
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+
+    - name: Créer la base de données WordPress
+      community.mysql.mysql_db:
+        name: wordpress
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+
+    - name: Créer l'utilisateur WordPress et lui donner les permissions
+      community.mysql.mysql_user:
+        name: wordpress
+        password: "{{ wp_db_password }}"
+        host: '%'
+        priv: 'wordpress.*:ALL,GRANT'
+        state: present
+        login_user: root
+        login_password: "{{ mysql_root_password }}"
+
+    - name: Autoriser les connexions externes à MySQL
+      lineinfile:
+        path: /etc/mysql/mariadb.conf.d/50-server.cnf
+        regexp: '^bind-address'
+        line: 'bind-address = 0.0.0.0'
+      notify: Redémarrer MySQL
+
+    - name: Ouvrir le port MySQL dans le pare-feu UFW
+      ufw:
+        rule: allow
+        port: 3306
+        proto: tcp
+
+  handlers:
+    - name: Redémarrer MySQL
+      systemd:
+        name: mysql
+        state: restarted
